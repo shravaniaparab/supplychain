@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  FARMER
+  TRANSPORTER
+  DISTRIBUTOR
+  RETAILER
+  CONSUMER
+  ADMIN
+}
+
+enum BatchState {
+  CREATED_BY_FARMER
+  APPROVED_BY_DISTRIBUTOR
+  TRANSPORT_ASSIGNED_FARMER_TO_DISTRIBUTOR
+  IN_TRANSIT_TO_DISTRIBUTOR
+  RECEIVED_BY_DISTRIBUTOR
+  SPLIT
+  APPROVED_BY_RETAILER
+  TRANSPORT_ASSIGNED_DISTRIBUTOR_TO_RETAILER
+  IN_TRANSIT_TO_RETAILER
+  RECEIVED_BY_RETAILER
+  FOR_SALE
+  SOLD
+}
+
+enum KycStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      UserRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  farmerProfile      FarmerProfile?
+  transporterProfile TransporterProfile?
+  distributorProfile DistributorProfile?
+  retailerProfile    RetailerProfile?
+
+  events     EventLog[]
+  transports Transport[]
+  batches    Batch[]
+}
+
+model FarmerProfile {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  aadhaar   String
+  landProof String
+  kycStatus KycStatus @default(PENDING)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TransporterProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  vehicleDetails String
+  driverDetails  String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model DistributorProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RetailerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Batch {
+  id          String     @id @default(uuid())
+  farmerId    String
+  cropType    String
+  quantity    Float
+  harvestDate DateTime
+  state       BatchState @default(CREATED_BY_FARMER)
+  qrCode      String     @unique
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  farmer User @relation(fields: [farmerId], references: [id])
+
+  parentSplits BatchSplit[] @relation("ParentBatch")
+  childSplits  BatchSplit[] @relation("ChildBatch")
+
+  transports     Transport[]
+  certificates   Certificate[]
+  priceBreakdown PriceBreakdown?
+  events         EventLog[]
+}
+
+model BatchSplit {
+  id           String @id @default(uuid())
+
+  batchId      String
+  subBatchId   String
+
+  batch        Batch @relation("ParentBatch", fields: [batchId], references: [id])
+  subBatch     Batch @relation("ChildBatch", fields: [subBatchId], references: [id])
+}
+
+
+model Transport {
+  id             String   @id @default(cuid())
+  batchId        String
+  transporterId  String
+  assignerId     String
+  vehicleDetails String
+  driverDetails  String
+  deliveryProof  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  batch       Batch @relation(fields: [batchId], references: [id])
+  transporter User  @relation(fields: [transporterId], references: [id])
+  assigner    User  @relation(fields: [assignerId], references: [id])
+}
+
+model Certificate {
+  id        String   @id @default(cuid())
+  batchId   String
+  type      String
+  issuer    String
+  filePath  String
+  createdAt DateTime @default(now())
+
+  batch Batch @relation(fields: [batchId], references: [id])
+}
+
+model PriceBreakdown {
+  id                String   @id @default(cuid())
+  batchId           String   @unique
+  farmerBasePrice   Float
+  transportFees     Float
+  distributorMargin Float
+  retailerMargin    Float
+  totalPrice        Float
+  createdAt         DateTime @default(now())
+
+  batch Batch @relation(fields: [batchId], references: [id])
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  batchId   String?
+  eventType String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  user  User?  @relation(fields: [userId], references: [id])
+  batch Batch? @relation(fields: [batchId], references: [id])
+}
